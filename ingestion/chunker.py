@@ -1,19 +1,9 @@
-"""
-Split 
-  - Python:            split by top-level function/class using `ast`
-  - JS / TS:            split by function/class using a regex heuristic
-  - Markdown:           split by heading section
-
-Every chunk carries the metadata needed for citations:
-file_path, start_line, end_line, symbol_name, symbol_type, snippet.
-"""
-
-import ast #Abstract Syntax Trees
+import ast
 import re
 from dataclasses import dataclass
 from typing import List, Optional
 
-from Scanner import FileRecord
+from scanner import FileRecord
 
 
 @dataclass
@@ -23,8 +13,8 @@ class Chunk:
     language: str
     start_line: int
     end_line: int
-    symbol_name: Optional[str] #like login or logout
-    symbol_type: str #like function
+    symbol_name: Optional[str]
+    symbol_type: str
     snippet: str
 
 
@@ -37,9 +27,10 @@ def chunk_file(record: FileRecord) -> List[Chunk]:
         chunks = _chunk_markdown(record)
     else:
         chunks = []
-    # Fallback - if a file produced no chunks keep the whole file as one chunk.
+
     if not chunks:
         chunks = [_whole_file_chunk(record)]
+
     return chunks
 
 
@@ -47,11 +38,11 @@ def _chunk_python(record: FileRecord) -> List[Chunk]:
     try:
         tree = ast.parse(record.content, filename=record.file_path)
     except SyntaxError:
-        return []  # fall back to whole file 
+        return []
 
     lines = record.content.splitlines()
     chunks: List[Chunk] = []
-    pending_module_lines: List[int] = []  # line numbers (1-indexed) awaiting flush
+    pending_module_lines: List[int] = []
 
     def flush_module_group():
         if not pending_module_lines:
@@ -59,7 +50,7 @@ def _chunk_python(record: FileRecord) -> List[Chunk]:
         start = pending_module_lines[0]
         end = pending_module_lines[-1]
         snippet = "\n".join(lines[start - 1:end])
-        if snippet.strip():  # skip groups that are just blank lines
+        if snippet.strip():
             chunks.append(Chunk(
                 chunk_id=f"{record.file_path}:{start}-{end}",
                 file_path=record.file_path,
@@ -74,7 +65,7 @@ def _chunk_python(record: FileRecord) -> List[Chunk]:
 
     for node in ast.iter_child_nodes(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            flush_module_group()  
+            flush_module_group()
 
             start = node.lineno
             end = _get_end_line(node, lines)
@@ -92,12 +83,11 @@ def _chunk_python(record: FileRecord) -> List[Chunk]:
                 snippet=snippet,
             ))
         else:
-            
             start = node.lineno
             end = _get_end_line(node, lines)
             pending_module_lines.extend(range(start, end + 1))
 
-    flush_module_group()  
+    flush_module_group()
 
     chunks.sort(key=lambda c: c.start_line)
     return chunks
@@ -108,19 +98,18 @@ def _get_end_line(node: ast.AST, lines: List[str]) -> int:
     return end if end is not None else len(lines)
 
 
-
 _JS_BOUNDARY_RE = re.compile(
     r"^\s*(export\s+)?(default\s+)?"
     r"(async\s+)?"
     r"(function\s+(?P<func_name>\w+)|"
     r"class\s+(?P<class_name>\w+)|"
-    r"const\s+(?P<const_name>\w+)\s*=\s*(async\s*)?\(?.*=>)",
+    r"const\s+(?P<const_name>\w+)\s*=\s*(async\s+)?(\([^)]*\)|\w+)\s*=>)",
 )
 
 
 def _chunk_js_ts(record: FileRecord) -> List[Chunk]:
     lines = record.content.splitlines()
-    boundaries = [] 
+    boundaries = []
 
     for i, line in enumerate(lines):
         m = _JS_BOUNDARY_RE.match(line)
@@ -133,6 +122,7 @@ def _chunk_js_ts(record: FileRecord) -> List[Chunk]:
         return []
 
     chunks: List[Chunk] = []
+
     first_boundary_line = boundaries[0][0]
     if first_boundary_line > 0:
         preamble = "\n".join(lines[0:first_boundary_line])
@@ -149,7 +139,7 @@ def _chunk_js_ts(record: FileRecord) -> List[Chunk]:
             ))
 
     for idx, (line_idx, name, symbol_type) in enumerate(boundaries):
-        start = line_idx + 1  
+        start = line_idx + 1
         end = boundaries[idx + 1][0] if idx + 1 < len(boundaries) else len(lines)
         snippet = "\n".join(lines[start - 1:end])
 
@@ -172,7 +162,7 @@ _MD_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)")
 
 def _chunk_markdown(record: FileRecord) -> List[Chunk]:
     lines = record.content.splitlines()
-    headings = []  
+    headings = []
 
     for i, line in enumerate(lines):
         m = _MD_HEADING_RE.match(line)
@@ -218,7 +208,6 @@ def _chunk_markdown(record: FileRecord) -> List[Chunk]:
     return chunks
 
 
-
 def _whole_file_chunk(record: FileRecord) -> Chunk:
     lines = record.content.splitlines()
     return Chunk(
@@ -235,7 +224,7 @@ def _whole_file_chunk(record: FileRecord) -> Chunk:
 
 if __name__ == "__main__":
     import sys
-    from Scanner import scan_repository
+    from scanner import scan_repository
 
     target = sys.argv[1] if len(sys.argv) > 1 else "."
     records = scan_repository(target)
