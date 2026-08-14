@@ -26,19 +26,9 @@ class Retriever:
                 f"Mismatch: {embeddings.shape[0]} embeddings vs {len(self.chunks)} chunks. "
                 "chunks.json and embeddings.npy must be built from the same run."
             )
-
-        # IndexFlatIP = exact inner-product search. Since embeddings were
-        # normalized at encode time, inner product == cosine similarity.
-        # "Flat" means brute-force — perfectly fine up to ~100k-1M vectors,
-        # which covers essentially any single repository. Swap for an
-        # approximate index (IVF/HNSW) only if indexing a huge monorepo
-        # makes search noticeably slow.
         self.dim = embeddings.shape[1]
         self.index = faiss.IndexFlatIP(self.dim)
         self.index.add(embeddings)
-
-        # Same embedding model used at build time — required, or query
-        # vectors won't live in the same space as the indexed vectors.
         self.model = SentenceTransformer(self.manifest["model_name"])
 
     def search(self, query: str, top_k: int = 5) -> list[dict]:

@@ -2,26 +2,20 @@ import os
 from dotenv import load_dotenv
 from google import genai
 
-DEFAULT_MODEL_NAME = "gemini-flash-latest"
+load_dotenv()
 
+DEFAULT_MODEL_NAME = "gemini-3.5-flash-lite"
 
-def _get_client(model_name: str = DEFAULT_MODEL_NAME):
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "GEMINI_API_KEY environment variable is not set. "
-            "Get a key from https://aistudio.google.com/apikey and "
-            "export GEMINI_API_KEY=your_key_here"
-        )
-    genai.configure(api_key=api_key)
-    return genai.GenerativeModel(model_name)
+client = genai.Client(
+    api_key=os.getenv("GEMINI_API_KEY")
+)
 
+def generate_answer(prompt: str,
+                    model_name: str = DEFAULT_MODEL_NAME) -> str:
 
-def generate_answer(prompt: str, model_name: str = DEFAULT_MODEL_NAME) -> str:
-    model = _get_client(model_name)
-    response = model.generate_content(prompt)
-
-    if not response.candidates:
-        raise RuntimeError("Gemini returned no candidates — request may have been blocked.")
+    response = client.models.generate_content(
+        model=model_name,
+        contents=prompt
+    )
 
     return response.text
