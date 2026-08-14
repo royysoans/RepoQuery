@@ -3,7 +3,10 @@ import re
 from dataclasses import dataclass
 from typing import List, Optional
 
-from scanner import FileRecord
+try:
+    from .scanner import FileRecord
+except ImportError:
+    from scanner import FileRecord
 
 
 @dataclass
@@ -82,6 +85,24 @@ def _chunk_python(record: FileRecord) -> List[Chunk]:
                 symbol_type=symbol_type,
                 snippet=snippet,
             ))
+
+            # If it's a class, also chunk its methods for fine-grained retrieval
+            if isinstance(node, ast.ClassDef):
+                for child in ast.iter_child_nodes(node):
+                    if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        m_start = child.lineno
+                        m_end = _get_end_line(child, lines)
+                        m_snippet = "\n".join(lines[m_start - 1:m_end])
+                        chunks.append(Chunk(
+                            chunk_id=f"{record.file_path}:{m_start}-{m_end}",
+                            file_path=record.file_path,
+                            language=record.language,
+                            start_line=m_start,
+                            end_line=m_end,
+                            symbol_name=f"{node.name}.{child.name}",
+                            symbol_type="method",
+                            snippet=m_snippet,
+                        ))
         else:
             start = node.lineno
             end = _get_end_line(node, lines)
@@ -103,8 +124,14 @@ _JS_BOUNDARY_RE = re.compile(
     r"(async\s+)?"
     r"(function\s+(?P<func_name>\w+)|"
     r"class\s+(?P<class_name>\w+)|"
-    r"const\s+(?P<const_name>\w+)\s*=\s*(async\s+)?(\([^)]*\)|\w+)\s*=>)",
+    r"interface\s+(?P<interface_name>\w+)|"
+    r"type\s+(?P<type_name>\w+)\s*=|"
+    r"enum\s+(?P<enum_name>\w+)|"
+    r"const\s+(?P<const_name>\w+)\s*=\s*(async\s+)?(\([^)]*\)|\w+)\s*=>|"
+    r"(static\s+)?(async\s+)?(?P<method_name>\w+)\s*\([^)]*\)\s*\{)",
 )
+
+_JS_KEYWORDS = {"if", "for", "while", "switch", "catch", "return", "throw", "try"}
 
 
 def _chunk_js_ts(record: FileRecord) -> List[Chunk]:
@@ -114,8 +141,32 @@ def _chunk_js_ts(record: FileRecord) -> List[Chunk]:
     for i, line in enumerate(lines):
         m = _JS_BOUNDARY_RE.match(line)
         if m:
-            name = m.group("func_name") or m.group("class_name") or m.group("const_name")
-            symbol_type = "class" if m.group("class_name") else "function"
+            method = m.group("method_name")
+            if method and method in _JS_KEYWORDS:
+                continue
+
+            name = (
+                m.group("func_name")
+                or m.group("class_name")
+                or m.group("const_name")
+                or m.group("interface_name")
+                or m.group("type_name")
+                or m.group("enum_name")
+                or method
+            )
+            if m.group("class_name"):
+                symbol_type = "class"
+            elif m.group("interface_name"):
+                symbol_type = "interface"
+            elif m.group("type_name"):
+                symbol_type = "type"
+            elif m.group("enum_name"):
+                symbol_type = "enum"
+            elif method:
+                symbol_type = "method"
+            else:
+                symbol_type = "function"
+
             boundaries.append((i, name, symbol_type))
 
     if not boundaries:
@@ -163,11 +214,18 @@ _MD_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)")
 def _chunk_markdown(record: FileRecord) -> List[Chunk]:
     lines = record.content.splitlines()
     headings = []
+    in_code_block = False
 
     for i, line in enumerate(lines):
-        m = _MD_HEADING_RE.match(line)
-        if m:
-            headings.append((i, m.group(2).strip()))
+        stripped = line.strip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_code_block = not in_code_block
+            continue
+
+        if not in_code_block:
+            m = _MD_HEADING_RE.match(line)
+            if m:
+                headings.append((i, m.group(2).strip()))
 
     if not headings:
         return []
@@ -206,6 +264,7 @@ def _chunk_markdown(record: FileRecord) -> List[Chunk]:
         ))
 
     return chunks
+
 
 
 def _whole_file_chunk(record: FileRecord) -> Chunk:

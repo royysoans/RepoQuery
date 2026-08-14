@@ -3,8 +3,13 @@ import os
 import sys
 import dataclasses
 
-from scanner import scan_repository
-from chunker import chunk_file
+try:
+    from .scanner import scan_repository
+    from .chunker import chunk_file
+except ImportError:
+    from scanner import scan_repository
+    from chunker import chunk_file
+
 
 
 def build_chunks_json(repo_root: str, output_path: str) -> int:
