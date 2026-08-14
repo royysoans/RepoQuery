@@ -9,6 +9,10 @@ except ImportError:
     from scanner import FileRecord
 
 
+MAX_CHUNK_LINES = 120
+OVERLAP_LINES = 25
+
+
 @dataclass
 class Chunk:
     chunk_id: str
@@ -26,13 +30,106 @@ def chunk_file(record: FileRecord) -> List[Chunk]:
         chunks = _chunk_python(record)
     elif record.language in ("javascript", "typescript", "jsx", "tsx"):
         chunks = _chunk_js_ts(record)
+    elif record.language == "go":
+        chunks = _chunk_go(record)
+    elif record.language == "rust":
+        chunks = _chunk_rust(record)
+    elif record.language in ("java", "csharp", "cpp", "c"):
+        chunks = _chunk_java_csharp_cpp(record)
+    elif record.language == "sql":
+        chunks = _chunk_sql(record)
     elif record.language == "markdown":
         chunks = _chunk_markdown(record)
     else:
         chunks = []
 
     if not chunks:
-        chunks = [_whole_file_chunk(record)]
+        chunks = _sliding_window_chunks(record)
+    else:
+        # Enforce max chunk line limit across all chunks
+        bounded_chunks = []
+        for c in chunks:
+            bounded_chunks.extend(_enforce_chunk_bounds(c, record))
+        chunks = bounded_chunks
+
+    return chunks
+
+
+def _enforce_chunk_bounds(chunk: Chunk, record: FileRecord) -> List[Chunk]:
+    lines = chunk.snippet.splitlines()
+    if len(lines) <= MAX_CHUNK_LINES:
+        return [chunk]
+
+    # Split oversized chunk into sliding windows
+    sub_chunks = []
+    total_lines = len(lines)
+    step = MAX_CHUNK_LINES - OVERLAP_LINES
+    for i in range(0, total_lines, step):
+        chunk_lines = lines[i : i + MAX_CHUNK_LINES]
+        if not chunk_lines:
+            break
+        start_line = chunk.start_line + i
+        end_line = start_line + len(chunk_lines) - 1
+        snippet = "\n".join(chunk_lines)
+        if not snippet.strip():
+            continue
+
+        sym_name = f"{chunk.symbol_name} (part {len(sub_chunks)+1})" if chunk.symbol_name else None
+        sub_chunks.append(Chunk(
+            chunk_id=f"{record.file_path}:{start_line}-{end_line}",
+            file_path=record.file_path,
+            language=record.language,
+            start_line=start_line,
+            end_line=end_line,
+            symbol_name=sym_name,
+            symbol_type=chunk.symbol_type,
+            snippet=snippet,
+        ))
+        if i + MAX_CHUNK_LINES >= total_lines:
+            break
+
+    return sub_chunks if sub_chunks else [chunk]
+
+
+def _sliding_window_chunks(record: FileRecord) -> List[Chunk]:
+    lines = record.content.splitlines()
+    if not lines:
+        return []
+
+    if len(lines) <= MAX_CHUNK_LINES:
+        return [Chunk(
+            chunk_id=f"{record.file_path}:1-{len(lines)}",
+            file_path=record.file_path,
+            language=record.language,
+            start_line=1,
+            end_line=len(lines),
+            symbol_name=None,
+            symbol_type="module",
+            snippet=record.content,
+        )]
+
+    chunks = []
+    step = MAX_CHUNK_LINES - OVERLAP_LINES
+    for i in range(0, len(lines), step):
+        window = lines[i : i + MAX_CHUNK_LINES]
+        if not window:
+            break
+        start_line = i + 1
+        end_line = i + len(window)
+        snippet = "\n".join(window)
+        if snippet.strip():
+            chunks.append(Chunk(
+                chunk_id=f"{record.file_path}:{start_line}-{end_line}",
+                file_path=record.file_path,
+                language=record.language,
+                start_line=start_line,
+                end_line=end_line,
+                symbol_name=None,
+                symbol_type="module",
+                snippet=snippet,
+            ))
+        if i + MAX_CHUNK_LINES >= len(lines):
+            break
 
     return chunks
 
@@ -86,7 +183,7 @@ def _chunk_python(record: FileRecord) -> List[Chunk]:
                 snippet=snippet,
             ))
 
-            # If it's a class, also chunk its methods for fine-grained retrieval
+            # If it's a class, also chunk its methods
             if isinstance(node, ast.ClassDef):
                 for child in ast.iter_child_nodes(node):
                     if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -109,7 +206,6 @@ def _chunk_python(record: FileRecord) -> List[Chunk]:
             pending_module_lines.extend(range(start, end + 1))
 
     flush_module_group()
-
     chunks.sort(key=lambda c: c.start_line)
     return chunks
 
@@ -130,42 +226,104 @@ _JS_BOUNDARY_RE = re.compile(
     r"const\s+(?P<const_name>\w+)\s*=\s*(async\s+)?(\([^)]*\)|\w+)\s*=>|"
     r"(static\s+)?(async\s+)?(?P<method_name>\w+)\s*\([^)]*\)\s*\{)",
 )
-
 _JS_KEYWORDS = {"if", "for", "while", "switch", "catch", "return", "throw", "try"}
 
 
 def _chunk_js_ts(record: FileRecord) -> List[Chunk]:
+    return _chunk_by_regex(
+        record,
+        _JS_BOUNDARY_RE,
+        _JS_KEYWORDS,
+        type_mapping={"class_name": "class", "interface_name": "interface", "type_name": "type", "enum_name": "enum", "method_name": "method", "func_name": "function", "const_name": "function"}
+    )
+
+
+_GO_BOUNDARY_RE = re.compile(
+    r"^\s*(func\s+(\([^)]+\)\s+)?(?P<func_name>\w+)|"
+    r"type\s+(?P<type_name>\w+)\s+(struct|interface))"
+)
+
+
+def _chunk_go(record: FileRecord) -> List[Chunk]:
+    return _chunk_by_regex(
+        record,
+        _GO_BOUNDARY_RE,
+        set(),
+        type_mapping={"type_name": "type", "func_name": "function"}
+    )
+
+
+_RUST_BOUNDARY_RE = re.compile(
+    r"^\s*(pub\s+)?(async\s+)?"
+    r"(fn\s+(?P<func_name>\w+)|"
+    r"struct\s+(?P<struct_name>\w+)|"
+    r"enum\s+(?P<enum_name>\w+)|"
+    r"trait\s+(?P<trait_name>\w+)|"
+    r"impl(\s+<[^>]+>)?\s+(?P<impl_name>[\w:]+))"
+)
+
+
+def _chunk_rust(record: FileRecord) -> List[Chunk]:
+    return _chunk_by_regex(
+        record,
+        _RUST_BOUNDARY_RE,
+        set(),
+        type_mapping={"func_name": "function", "struct_name": "struct", "enum_name": "enum", "trait_name": "trait", "impl_name": "impl"}
+    )
+
+
+_JAVA_CPP_BOUNDARY_RE = re.compile(
+    r"^\s*(public\s+|private\s+|protected\s+|static\s+|final\s+|async\s+)*"
+    r"(class\s+(?P<class_name>\w+)|"
+    r"interface\s+(?P<interface_name>\w+)|"
+    r"enum\s+(?P<enum_name>\w+)|"
+    r"(struct\s+(?P<struct_name>\w+))|"
+    r"(([\w<>\[\]]+)\s+(?P<func_name>\w+)\s*\([^)]*\)\s*(\{)?))"
+)
+_JAVA_KEYWORDS = {"if", "for", "while", "switch", "catch", "return", "throw", "try", "synchronized", "new"}
+
+
+def _chunk_java_csharp_cpp(record: FileRecord) -> List[Chunk]:
+    return _chunk_by_regex(
+        record,
+        _JAVA_CPP_BOUNDARY_RE,
+        _JAVA_KEYWORDS,
+        type_mapping={"class_name": "class", "interface_name": "interface", "enum_name": "enum", "struct_name": "struct", "func_name": "function"}
+    )
+
+
+_SQL_BOUNDARY_RE = re.compile(
+    r"^\s*CREATE\s+(OR\s+REPLACE\s+)?(TABLE|FUNCTION|PROCEDURE|VIEW|INDEX|TRIGGER)\s+(?P<symbol_name>[\w\.]+)",
+    re.IGNORECASE
+)
+
+
+def _chunk_sql(record: FileRecord) -> List[Chunk]:
+    return _chunk_by_regex(
+        record,
+        _SQL_BOUNDARY_RE,
+        set(),
+        type_mapping={"symbol_name": "sql_definition"}
+    )
+
+
+def _chunk_by_regex(record: FileRecord, pattern: re.Pattern, keywords: set, type_mapping: dict) -> List[Chunk]:
     lines = record.content.splitlines()
     boundaries = []
 
     for i, line in enumerate(lines):
-        m = _JS_BOUNDARY_RE.match(line)
+        m = pattern.match(line)
         if m:
-            method = m.group("method_name")
-            if method and method in _JS_KEYWORDS:
+            groups = {k: v for k, v in m.groupdict().items() if v}
+            if not groups:
                 continue
 
-            name = (
-                m.group("func_name")
-                or m.group("class_name")
-                or m.group("const_name")
-                or m.group("interface_name")
-                or m.group("type_name")
-                or m.group("enum_name")
-                or method
-            )
-            if m.group("class_name"):
-                symbol_type = "class"
-            elif m.group("interface_name"):
-                symbol_type = "interface"
-            elif m.group("type_name"):
-                symbol_type = "type"
-            elif m.group("enum_name"):
-                symbol_type = "enum"
-            elif method:
-                symbol_type = "method"
-            else:
-                symbol_type = "function"
+            name = list(groups.values())[0]
+            if name in keywords:
+                continue
+
+            first_key = list(groups.keys())[0]
+            symbol_type = type_mapping.get(first_key, "symbol")
 
             boundaries.append((i, name, symbol_type))
 
@@ -264,21 +422,6 @@ def _chunk_markdown(record: FileRecord) -> List[Chunk]:
         ))
 
     return chunks
-
-
-
-def _whole_file_chunk(record: FileRecord) -> Chunk:
-    lines = record.content.splitlines()
-    return Chunk(
-        chunk_id=f"{record.file_path}:1-{len(lines)}",
-        file_path=record.file_path,
-        language=record.language,
-        start_line=1,
-        end_line=len(lines) if lines else 1,
-        symbol_name=None,
-        symbol_type="module",
-        snippet=record.content,
-    )
 
 
 if __name__ == "__main__":
