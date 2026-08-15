@@ -96,3 +96,4 @@ streamlit run app.py
 - Use the **Code QA** tab to ask questions with live token streaming and expandable citations
 - Use the **Code Search** tab for instant symbol and keyword search (works without GeminiAPI)
 - Use the **Index Analytics** tab to view language breakdowns and indexed chunk tables
+- Ensure the file path is without inverted commas -> /Users/roystonsoans/Neon Survivor
