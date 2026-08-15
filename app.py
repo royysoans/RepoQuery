@@ -11,7 +11,7 @@ if PROJECT_ROOT not in sys.path:
 
 from repoquery import get_default_data_dir, is_index_ready, index_repo
 from retrieval.index import Retriever
-from llm.answer import ask_question
+from llm.answer import ask_question, ask_question_stream
 
 # Page Configuration
 st.set_page_config(
@@ -19,6 +19,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
 
 # Custom Styling
 st.markdown("""
@@ -171,26 +172,24 @@ def main():
                 st.markdown(question)
 
             with st.chat_message("assistant"):
-                with st.spinner("Retrieving context and generating response..."):
-                    try:
-                        result = ask_question(retriever, question, top_k=top_k)
-                        answer = result["answer"]
-                        citations = result["citations"]
-                        
-                        st.markdown(answer)
-                        if citations:
-                            with st.expander("Sources & Citations", expanded=True):
-                                for c in citations:
-                                    sym = f" (`{c['symbol_name']}`)" if c.get("symbol_name") else ""
-                                    st.markdown(f"**Score {c['score']:.4f}** — `{c['file_path']}:{c['start_line']}-{c['end_line']}`{sym}")
-                        
-                        st.session_state.messages.append({
-                            "role": "assistant",
-                            "content": answer,
-                            "citations": citations
-                        })
-                    except Exception as e:
-                        st.error(f"Error generating answer: {e}")
+                try:
+                    stream_gen, citations = ask_question_stream(retriever, question, top_k=top_k)
+                    answer = st.write_stream(stream_gen)
+                    
+                    if citations:
+                        with st.expander("Sources & Citations", expanded=True):
+                            for c in citations:
+                                sym = f" (`{c['symbol_name']}`)" if c.get("symbol_name") else ""
+                                st.markdown(f"**Score {c['score']:.4f}** — `{c['file_path']}:{c['start_line']}-{c['end_line']}`{sym}")
+                    
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": answer,
+                        "citations": citations
+                    })
+                except Exception as e:
+                    st.error(f"Error generating answer: {e}")
+
 
     # TAB 2: Hybrid Search
     with tab_search:

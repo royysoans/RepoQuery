@@ -8,11 +8,12 @@ sys.path.insert(0, PROJECT_ROOT)
 try:
     from retrieval.index import Retriever
     from .prompt import build_prompt
-    from .gemini_client import generate_answer
+    from .gemini_client import generate_answer, generate_answer_stream
 except ImportError:
     from retrieval.index import Retriever
     from prompt import build_prompt
-    from gemini_client import generate_answer
+    from gemini_client import generate_answer, generate_answer_stream
+
 
 
 DEFAULT_TOP_K = 5
@@ -47,6 +48,32 @@ def ask_question(retriever: Retriever, question: str, top_k: int = DEFAULT_TOP_K
         "answer": answer_text,
         "citations": citations,
     }
+
+
+def ask_question_stream(retriever: Retriever, question: str, top_k: int = DEFAULT_TOP_K):
+    """
+    Search context and return (stream_generator, citations).
+    """
+    chunks = retriever.search(question, top_k=top_k)
+    citations = [
+        {
+            "file_path": c["file_path"],
+            "start_line": c["start_line"],
+            "end_line": c["end_line"],
+            "symbol_name": c.get("symbol_name"),
+            "score": c["score"],
+        }
+        for c in chunks
+    ]
+
+    if not chunks:
+        def empty_gen():
+            yield "No relevant code was found in the index for this question."
+        return empty_gen(), citations
+
+    prompt = build_prompt(question, chunks)
+    return generate_answer_stream(prompt), citations
+
 
 
 if __name__ == "__main__":

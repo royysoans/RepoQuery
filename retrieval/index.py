@@ -60,20 +60,38 @@ class Retriever:
         self.model = SentenceTransformer(self.manifest["model_name"])
 
         # Initialize BM25 Sparse Index
-        self._init_bm25()
+        self._init_bm25(data_dir)
 
-    def _init_bm25(self):
+    def _init_bm25(self, data_dir: str):
         if not BM25Okapi:
             self.bm25 = None
             return
 
+        bm25_cache_path = os.path.join(data_dir, "bm25.pkl")
+        if os.path.isfile(bm25_cache_path):
+            try:
+                import pickle
+                with open(bm25_cache_path, "rb") as f:
+                    self.bm25 = pickle.load(f)
+                return
+            except Exception:
+                pass
+
         corpus_tokens = []
         for c in self.chunks:
-            # Index file path, symbol name, and snippet
             text = f"{c['file_path']} {c.get('symbol_name') or ''} {c['snippet']}"
             corpus_tokens.append(tokenize_code(text))
 
         self.bm25 = BM25Okapi(corpus_tokens)
+
+        # Save to cache
+        try:
+            import pickle
+            with open(bm25_cache_path, "wb") as f:
+                pickle.dump(self.bm25, f)
+        except Exception:
+            pass
+
 
     def search_dense(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
         """Vector semantic search via FAISS."""

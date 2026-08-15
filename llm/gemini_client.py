@@ -87,3 +87,63 @@ def generate_answer(
     if last_exception:
         raise RuntimeError(f"All Gemini model attempts failed: {last_exception}") from last_exception
     raise RuntimeError("Failed to generate a response from Gemini.")
+
+
+def generate_answer_stream(
+    prompt: str,
+    model_name: str = DEFAULT_MODEL_NAME,
+    max_retries_per_model: int = 3
+):
+    """
+    Stream answer tokens using Gemini with model fallback.
+    Yields text chunks as they arrive.
+    """
+    client = get_client()
+    models_to_try = []
+    for m in [model_name] + FALLBACK_MODELS:
+        if m not in models_to_try:
+            models_to_try.append(m)
+
+    config = types.GenerateContentConfig(
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
+    )
+
+    last_exception = None
+    for m in models_to_try:
+        for attempt in range(max_retries_per_model):
+            try:
+                response = client.models.generate_content_stream(
+                    model=m,
+                    contents=prompt,
+                    config=config
+                )
+                yielded = False
+                for chunk in response:
+                    if chunk.text:
+                        yielded = True
+                        yield chunk.text
+                if yielded:
+                    return
+            except genai_errors.APIError as e:
+                last_exception = e
+                err_msg = str(e).lower()
+                if "404" in err_msg or "not_found" in err_msg or "not found" in err_msg or "no longer available" in err_msg:
+                    break
+                if hasattr(e, "code") and e.code in (429, 500, 503):
+                    backoff = (2 ** attempt) + random.uniform(0.5, 1.5)
+                    time.sleep(backoff)
+                    continue
+                else:
+                    break
+            except Exception as e:
+                last_exception = e
+                err_msg = str(e).lower()
+                if "404" in err_msg or "not_found" in err_msg or "not found" in err_msg or "no longer available" in err_msg:
+                    break
+                backoff = (2 ** attempt) + random.uniform(0.5, 1.0)
+                time.sleep(backoff)
+                continue
+
+    if last_exception:
+        raise RuntimeError(f"All Gemini model attempts failed: {last_exception}") from last_exception
+    raise RuntimeError("Failed to generate a response from Gemini.")
