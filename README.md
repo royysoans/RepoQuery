@@ -64,7 +64,17 @@ RepoQuery is a high-performance Retrieval-Augmented Generation (RAG) system and 
 
 ### 1. Installation
 ```bash
+MAC
+
+python3 -m venv .venv
 source .venv/bin/activate
+pip install -r requirements.txt
+
+
+WINDOWS
+
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
@@ -85,7 +95,7 @@ streamlit run app.py
 - Enter your repository directory path in the sidebar
 - Click "Build / Re-index Repository" if not indexed yet
 - Use the **Code QA** tab to ask questions with live token streaming and expandable citations
-- Use the **Code Search** tab for instant symbol and keyword search
+- Use the **Code Search** tab for instant symbol and keyword search (works without GeminiAPI)
 - Use the **Index Analytics** tab to view language breakdowns and indexed chunk tables
 
 #### Option B: Terminal CLI - Ask a Question (RAG with Gemini)
