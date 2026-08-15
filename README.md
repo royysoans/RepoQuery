@@ -74,23 +74,29 @@ GEMINI_API_KEY=your_gemini_api_key_here
 
 ### 3. Running Options
 
-#### Option A: Ask a Question (RAG with Gemini Answer)
+#### Option A: Web Dashboard UI (Streamlit)
+```bash
+streamlit run app.py
+```
+
+#### Option B: Terminal CLI - Ask a Question (RAG with Gemini)
 ```bash
 python repoquery.py ask /path/to/target/repository "Where are questions generated?"
 ```
 
-#### Option B: Interactive Chat Mode (Ask Multiple Questions)
+#### Option C: Terminal CLI - Interactive Chat REPL
 ```bash
 python repoquery.py ask /path/to/target/repository
 ```
 
-#### Option C: Fast Code Search (No LLM Tokens Used)
+#### Option D: Terminal CLI - Fast Code Search (No LLM Tokens)
 ```bash
 python repoquery.py search /path/to/target/repository "GEMINI_MODELS"
 ```
 
-#### Option D: Explicitly Pre-Index a Repository
+#### Option E: Explicitly Pre-Index a Repository
 ```bash
 python repoquery.py index /path/to/target/repository
 ```
+
 
