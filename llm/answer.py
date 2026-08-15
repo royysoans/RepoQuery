@@ -19,7 +19,7 @@ except ImportError:
 DEFAULT_TOP_K = 5
 
 
-def ask_question(retriever: Retriever, question: str, top_k: int = DEFAULT_TOP_K) -> dict:
+def ask_question(retriever: Retriever, question: str, top_k: int = DEFAULT_TOP_K, model_name: str = None) -> dict:
     chunks = retriever.search(question, top_k=top_k)
 
     if not chunks:
@@ -30,7 +30,8 @@ def ask_question(retriever: Retriever, question: str, top_k: int = DEFAULT_TOP_K
         }
 
     prompt = build_prompt(question, chunks)
-    answer_text = generate_answer(prompt)
+    kwargs = {"model_name": model_name} if model_name else {}
+    answer_text = generate_answer(prompt, **kwargs)
 
     citations = [
         {
@@ -50,11 +51,17 @@ def ask_question(retriever: Retriever, question: str, top_k: int = DEFAULT_TOP_K
     }
 
 
-def ask_question_stream(retriever: Retriever, question: str, top_k: int = DEFAULT_TOP_K):
+def ask_question_stream(retriever: Retriever, question: str, top_k: int = DEFAULT_TOP_K, model_name: str = None):
     """
     Search context and return (stream_generator, citations).
     """
     chunks = retriever.search(question, top_k=top_k)
+
+    if not chunks:
+        def empty_gen():
+            yield "No relevant code was found in the index for this question."
+        return empty_gen(), []
+
     citations = [
         {
             "file_path": c["file_path"],
@@ -66,13 +73,9 @@ def ask_question_stream(retriever: Retriever, question: str, top_k: int = DEFAUL
         for c in chunks
     ]
 
-    if not chunks:
-        def empty_gen():
-            yield "No relevant code was found in the index for this question."
-        return empty_gen(), citations
-
     prompt = build_prompt(question, chunks)
-    return generate_answer_stream(prompt), citations
+    kwargs = {"model_name": model_name} if model_name else {}
+    return generate_answer_stream(prompt, **kwargs), citations
 
 
 

@@ -168,7 +168,7 @@ class Retriever:
             if idx not in chunks_by_idx:
                 chunks_by_idx[idx] = item
             else:
-                chunks_by_idx[idx]["bm25_score"] = item.get("bm25_score")
+                chunks_by_idx[idx]["bm25_score"] = item.get("bm25_score", 0.0)
 
         sorted_indices = sorted(scores_by_idx.keys(), key=lambda i: scores_by_idx[i], reverse=True)
 

@@ -54,15 +54,14 @@ st.markdown("""
 def init_session():
     if "messages" not in st.session_state:
         st.session_state.messages = []
-    if "current_repo" not in st.session_state:
-        st.session_state.current_repo = ""
+    if "repo_path" not in st.session_state:
+        st.session_state.repo_path = ""
 
 
 @st.cache_resource(show_spinner=False)
 def get_retriever(data_dir: str) -> Retriever:
     """Cached retriever instance stored in memory across user interactions."""
     return Retriever(data_dir)
-
 
 
 def main():
@@ -73,35 +72,31 @@ def main():
         st.title("RepoQuery")
         st.caption("Codebase RAG & Hybrid Search Engine")
         
-        repo_path = st.text_input(
-            "Repository Path",
-            value="/Users/roystonsoans/Pokelearn",
-            help="Enter absolute path to the target repository"
-        ).strip()
-
+        repo_path = st.session_state.repo_path
         data_dir = get_default_data_dir(repo_path) if repo_path else ""
-        indexed = is_index_ready(data_dir) if data_dir else False
+        indexed = is_index_ready(data_dir) if (data_dir and os.path.isdir(repo_path)) else False
 
         # Status & Metrics
-        if indexed:
-            st.success("Index Ready")
-            chunks_file = os.path.join(data_dir, "chunks.json")
-            if os.path.isfile(chunks_file):
-                with open(chunks_file, "r") as f:
-                    chunk_data = json.load(f)
-                num_chunks = len(chunk_data)
-                num_files = len(set(c["file_path"] for c in chunk_data))
-                
-                col1, col2 = st.columns(2)
-                col1.metric("Files", num_files)
-                col2.metric("Chunks", num_chunks)
-        else:
-            st.warning("Index Not Built")
+        if repo_path and os.path.isdir(repo_path):
+            if indexed:
+                st.success("Index Ready")
+                chunks_file = os.path.join(data_dir, "chunks.json")
+                if os.path.isfile(chunks_file):
+                    with open(chunks_file, "r") as f:
+                        chunk_data = json.load(f)
+                    num_chunks = len(chunk_data)
+                    num_files = len(set(c["file_path"] for c in chunk_data))
+                    
+                    col1, col2 = st.columns(2)
+                    col1.metric("Files", num_files)
+                    col2.metric("Chunks", num_chunks)
+            else:
+                st.warning("Index Not Built")
 
         st.markdown("---")
         st.subheader("Indexing")
 
-        if st.button("Build / Re-index Repository", use_container_width=True):
+        if st.button("Force Re-index Repository", use_container_width=True):
             if not repo_path or not os.path.isdir(repo_path):
                 st.error("Invalid repository directory path!")
             else:
@@ -129,16 +124,56 @@ def main():
     st.markdown('<div class="main-header">RepoQuery</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">Codebase Question Answering and Hybrid Vector Search</div>', unsafe_allow_html=True)
 
+    # Main Repository Selection Card
+    with st.form("repo_path_form", clear_on_submit=False):
+        st.markdown("##### Target Repository Path")
+        col_input, col_btn = st.columns([3, 1])
+        with col_input:
+            path_typed = st.text_input(
+                "Repo Path",
+                value=st.session_state.repo_path,
+                placeholder="/Users/username/your-project-folder",
+                label_visibility="collapsed"
+            ).strip()
+        with col_btn:
+            submit_build = st.form_submit_button("Build / Load Index", type="primary", use_container_width=True)
+
+    # Process Form Submission
+    if submit_build:
+        if not path_typed:
+            st.error("Please enter a valid directory path.")
+        elif not os.path.isdir(path_typed):
+            st.error(f"Directory not found: `{path_typed}`")
+        else:
+            st.session_state.repo_path = path_typed
+            target_data_dir = get_default_data_dir(path_typed)
+            if not is_index_ready(target_data_dir):
+                with st.spinner(f"Building vector & keyword index for '{path_typed}'..."):
+                    try:
+                        index_repo(path_typed, target_data_dir, force=True)
+                        st.success("Indexing complete!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Indexing failed: {e}")
+            else:
+                st.rerun()
+
+    repo_path = st.session_state.repo_path
+
     if not repo_path or not os.path.isdir(repo_path):
-        st.info("Please enter a valid repository directory path in the sidebar to begin.")
+        st.info("Enter an absolute repository directory path above and click **Build / Load Index** to get started.")
         return
 
     if not indexed:
-        st.warning(f"Repository {repo_path} has not been indexed yet.")
-        if st.button("Build Index Now"):
+        st.warning(f"Repository `{repo_path}` index is not built yet.")
+        if st.button("Build Index Now", type="primary"):
             with st.spinner("Building index..."):
-                index_repo(repo_path, data_dir, force=True)
-                st.rerun()
+                try:
+                    index_repo(repo_path, data_dir, force=True)
+                    st.success("Indexing complete!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Indexing failed: {e}")
         return
 
     # Tabs Interface (No emojis)
@@ -173,7 +208,7 @@ def main():
 
             with st.chat_message("assistant"):
                 try:
-                    stream_gen, citations = ask_question_stream(retriever, question, top_k=top_k)
+                    stream_gen, citations = ask_question_stream(retriever, question, top_k=top_k, model_name=selected_model)
                     answer = st.write_stream(stream_gen)
                     
                     if citations:

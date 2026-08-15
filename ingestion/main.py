@@ -20,7 +20,9 @@ def build_chunks_json(repo_root: str, output_path: str) -> int:
         for chunk in chunk_file(record):
             all_chunks.append(dataclasses.asdict(chunk))
 
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    out_dir = os.path.dirname(output_path)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(all_chunks, f, indent=2)
 

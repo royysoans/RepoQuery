@@ -1,9 +1,10 @@
-cat > .gitignore <<'EOF'
 .DS_Store
 __pycache__/
 *.pyc
+*.pyo
 .venv/
 venv/
+env/
 .env
 data/
-EOF
+*.pkl
