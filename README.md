@@ -1,6 +1,6 @@
 # RepoQuery
 
-RepoQuery is a high-performance, local-first Retrieval-Augmented Generation (RAG) system and codebase search engine. It transforms source code repositories into searchable vector and keyword indices, enabling precise natural language code exploration and cited Q&A powered by Google Gemini.
+RepoQuery is a high-performance, local-first Retrieval-Augmented Generation (RAG) system and codebase search engine. It transforms source code repositories into searchable vector and keyword indices, enabling precise natural language code exploration, real-time streaming Q&A powered by Google Gemini, and interactive web visualization.
 
 ---
 
@@ -11,6 +11,8 @@ RepoQuery is a high-performance, local-first Retrieval-Augmented Generation (RAG
 - **Reciprocal Rank Fusion (RRF)**: A rank-blending algorithm that mathematically combines dense semantic search and sparse keyword search into a precision score.
 - **AST & Structural Chunking**: Parses code structures like functions, classes, and methods rather than splitting arbitrarily, preserving logic boundaries.
 - **Sliding Window Safeguard**: Automatically splits oversized files into overlapping 120-line windows to prevent context window overflow during LLM inference.
+- **BM25 Persistence Cache**: Serializes tokenized BM25 indices to disk (`bm25.pkl`) for sub-millisecond startup times on subsequent runs.
+- **Real-Time Token Streaming**: Streams Gemini answer responses chunk-by-chunk for zero-perceived-latency user feedback.
 
 ---
 
@@ -19,42 +21,42 @@ RepoQuery is a high-performance, local-first Retrieval-Augmented Generation (RAG
 ### Step 1: Repository Ingestion & Scanning
 - **Component**: Repository Scanner (`ingestion/scanner.py`)
 - **How it works**:
-  - Dynamically parses `.gitignore` rules to exclude build outputs, virtual environments, and dependencies (`node_modules`, `dist`, `.venv`).
-  - Inspects file headers for null-byte binary signatures to automatically filter out images and compiled assets.
-  - Reads text using fallback decoding (`UTF-8` $\rightarrow$ `Latin-1` $\rightarrow$ lossy replacement) so no valid source file is dropped.
+  - Dynamically parses `.gitignore` rules using `pathspec` to exclude build outputs, virtual environments, and external packages (`node_modules`, `dist`, `.venv`).
+  - Inspects file headers for null-byte binary signatures to filter out images and compiled assets.
+  - Reads text using fallback decoding (`UTF-8` -> `Latin-1` -> lossy replacement) so no valid source file is skipped.
 
 ### Step 2: Structure-Aware Code Chunking
 - **Component**: Multi-Language Chunker (`ingestion/chunker.py` and `ingestion/main.py`)
 - **How it works**:
-  - Uses AST parsing for Python and regex boundary matchers for TypeScript, JavaScript, Go, Rust, Java, C/C++, and SQL.
+  - Uses Python AST parsing and boundary regex matchers for TypeScript, JavaScript, Go, Rust, Java, C/C++, and SQL.
   - Enforces a 120-line maximum line ceiling per chunk using a 25-line sliding window overlap to guarantee clean context boundaries.
   - Aggregates chunk records and writes structured output to `data/chunks.json`.
 
 ### Step 3: Vector Embedding & Storage
 - **Component**: Vector Embedder (`embeddings/embedder.py`)
 - **How it works**:
-  - Transforms chunk snippets and metadata headers into 384-dimensional normalized vector embeddings.
-  - Persists vector arrays to `embeddings.npy` and manifest data to `embedding_manifest.json`.
+  - Transforms chunk snippets and metadata headers into 384-dimensional normalized vector embeddings using `all-MiniLM-L6-v2`.
+  - Persists vector arrays to `embeddings.npy` and manifest metadata to `embedding_manifest.json`.
 
-### Step 4: Hybrid Search & Rank Fusion
+### Step 4: Hybrid Search & BM25 Caching
 - **Component**: Hybrid Retriever (`retrieval/index.py`)
 - **How it works**:
-  - Tokenizes code by splitting `camelCase`, `snake_case`, and identifier symbols for precise term matching.
-  - Executes parallel searches across the FAISS vector index (dense) and BM25 index (sparse).
-  - Merges result lists using RRF scoring: $\text{RRF}(d) = \frac{0.6}{60 + \text{rank}_{\text{dense}}} + \frac{0.4}{60 + \text{rank}_{\text{bm25}}}$.
+  - Tokenizes code identifiers, splitting `camelCase` and `snake_case` symbols for precise keyword matching.
+  - Checks for cached `bm25.pkl` for instant index loading; builds and serializes it if missing.
+  - Merges dense FAISS scores and sparse BM25 scores via Reciprocal Rank Fusion (RRF).
 
-### Step 5: Context Assembly & LLM Generation
+### Step 5: Context Assembly & Streaming Generation
 - **Component**: RAG Answer Engine (`llm/prompt.py`, `llm/gemini_client.py`, `llm/answer.py`)
 - **How it works**:
-  - Constructs a strict context prompt mandating factual citations in `file_path:start_line-end_line` format.
-  - Invokes Google Gemini models (`gemini-flash-latest` cascade) with exponential backoff retries and disabled automatic function calling warning logs.
+  - Constructs a strict context prompt mandating factual line citations in `file_path:start_line-end_line` format.
+  - Uses `gemini-3.6-flash` (with fallback to `gemini-3.5-flash` and `gemini-flash-latest`) with instant 404 error skipping.
+  - Stream answers in real-time token chunks via `generate_answer_stream` for instant feedback.
 
-### Step 6: CLI Orchestration & Caching
-- **Component**: Command-Line Interface (`repoquery.py`)
+### Step 6: Web Dashboard & CLI Interface
+- **Component**: Web Dashboard (`app.py`) & Unified CLI (`repoquery.py`)
 - **How it works**:
-  - Computes deterministic path hashes for indexed repositories (`data/repo_name_hash/`).
-  - Reuses existing index caches for instant responses on subsequent queries.
-  - Provides interactive REPL sessions and standalone code search modes.
+  - **Web Dashboard (`app.py`)**: Built with Streamlit, providing real-time chat streaming, expandable citations, symbol keyword search, and repository index analytics. Uses `@st.cache_resource` to keep models and FAISS vectors cached in memory.
+  - **Unified CLI (`repoquery.py`)**: Supports single-question evaluation (`ask`), interactive terminal REPL, pure code search (`search`), and repository pre-indexing (`index`).
 
 ---
 
@@ -72,31 +74,40 @@ Create a `.env` file in the root directory:
 GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
-### 3. Running Options
+### 3. How to Use
 
 #### Option A: Web Dashboard UI (Streamlit)
+Launch the visual web interface in your browser:
 ```bash
 streamlit run app.py
 ```
+- Open `http://localhost:8501`
+- Enter your repository directory path in the sidebar
+- Click "Build / Re-index Repository" if not indexed yet
+- Use the **Code QA** tab to ask questions with live token streaming and expandable citations
+- Use the **Code Search** tab for instant symbol and keyword search
+- Use the **Index Analytics** tab to view language breakdowns and indexed chunk tables
 
 #### Option B: Terminal CLI - Ask a Question (RAG with Gemini)
+Run a single question query directly from the terminal:
 ```bash
 python repoquery.py ask /path/to/target/repository "Where are questions generated?"
 ```
 
-#### Option C: Terminal CLI - Interactive Chat REPL
+#### Option C: Terminal CLI - Interactive REPL Session
+Start an interactive Q&A session to ask multiple questions in sequence:
 ```bash
 python repoquery.py ask /path/to/target/repository
 ```
 
-#### Option D: Terminal CLI - Fast Code Search (No LLM Tokens)
+#### Option D: Terminal CLI - Fast Code Search (No LLM Tokens Used)
+Perform hybrid vector + BM25 symbol search without invoking Gemini AI:
 ```bash
 python repoquery.py search /path/to/target/repository "GEMINI_MODELS"
 ```
 
-#### Option E: Explicitly Pre-Index a Repository
+#### Option E: Terminal CLI - Pre-Index a Repository
+Explicitly build or force re-index a repository beforehand:
 ```bash
 python repoquery.py index /path/to/target/repository
 ```
-
-
