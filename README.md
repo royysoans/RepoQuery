@@ -2,7 +2,6 @@
 
 RepoQuery is a high-performance Retrieval-Augmented Generation (RAG) system and codebase search engine. It transforms source code repositories into searchable vector and keyword indices, enabling  natural language code exploration and real-time streaming Q&A powered by Google Gemini
 
----
 
 ## Core Concepts
 
@@ -97,27 +96,3 @@ streamlit run app.py
 - Use the **Code QA** tab to ask questions with live token streaming and expandable citations
 - Use the **Code Search** tab for instant symbol and keyword search (works without GeminiAPI)
 - Use the **Index Analytics** tab to view language breakdowns and indexed chunk tables
-
-#### Option B: Terminal CLI - Ask a Question (RAG with Gemini)
-Run a single question query directly from the terminal:
-```bash
-python repoquery.py ask /path/to/target/repository "Where are questions generated?"
-```
-
-#### Option C: Terminal CLI - Interactive REPL Session
-Start an interactive Q&A session to ask multiple questions in sequence:
-```bash
-python repoquery.py ask /path/to/target/repository
-```
-
-#### Option D: Terminal CLI - Fast Code Search (No LLM Tokens Used)
-Perform hybrid vector + BM25 symbol search without invoking Gemini AI:
-```bash
-python repoquery.py search /path/to/target/repository "GEMINI_MODELS"
-```
-
-#### Option E: Terminal CLI - Pre-Index a Repository
-Explicitly build or force re-index a repository beforehand:
-```bash
-python repoquery.py index /path/to/target/repository
-```
