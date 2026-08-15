@@ -72,14 +72,25 @@ Create a `.env` file in the root directory:
 GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
-### 3. Usage
+### 3. Running Options
+
+#### Option A: Ask a Question (RAG with Gemini Answer)
 ```bash
-# Ask a question about any codebase
-python repoquery.py ask /path/to/repository "Where are questions generated?"
-
-# Perform keyword & semantic code search without LLM overhead
-python repoquery.py search /path/to/repository "GEMINI_MODELS"
-
-# Force re-index a repository
-python repoquery.py index /path/to/repository
+python repoquery.py ask /path/to/target/repository "Where are questions generated?"
 ```
+
+#### Option B: Interactive Chat Mode (Ask Multiple Questions)
+```bash
+python repoquery.py ask /path/to/target/repository
+```
+
+#### Option C: Fast Code Search (No LLM Tokens Used)
+```bash
+python repoquery.py search /path/to/target/repository "GEMINI_MODELS"
+```
+
+#### Option D: Explicitly Pre-Index a Repository
+```bash
+python repoquery.py index /path/to/target/repository
+```
+

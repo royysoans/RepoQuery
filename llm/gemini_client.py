@@ -7,13 +7,11 @@ from google import genai
 from google.genai import types
 from google.genai import errors as genai_errors
 
-DEFAULT_MODEL_NAME = "gemini-flash-latest"
+DEFAULT_MODEL_NAME = "gemini-3.6-flash"
 FALLBACK_MODELS = [
-    "gemini-flash-latest",
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-flash-lite-latest",
-    "gemini-pro-latest"
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-flash-latest"
 ]
 
 _client: Optional[genai.Client] = None
@@ -43,7 +41,12 @@ def generate_answer(
     Disables automatic function calling config to suppress SDK warning logs.
     """
     client = get_client()
-    models_to_try = [model_name] + [m for m in FALLBACK_MODELS if m != model_name]
+    
+    # Deduplicate model list while preserving preference order
+    models_to_try = []
+    for m in [model_name] + FALLBACK_MODELS:
+        if m not in models_to_try:
+            models_to_try.append(m)
 
     config = types.GenerateContentConfig(
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
@@ -62,16 +65,21 @@ def generate_answer(
                     return response.text
             except genai_errors.APIError as e:
                 last_exception = e
-                # Check for rate limit or transient errors
+                err_msg = str(e).lower()
+                if "404" in err_msg or "not_found" in err_msg or "not found" in err_msg or "no longer available" in err_msg:
+                    # Invalid or deprecated model, break immediately to try next model
+                    break
                 if hasattr(e, "code") and e.code in (429, 500, 503):
                     backoff = (2 ** attempt) + random.uniform(0.5, 1.5)
                     time.sleep(backoff)
                     continue
                 else:
-                    # Model might not be supported or bad request, try next model
                     break
             except Exception as e:
                 last_exception = e
+                err_msg = str(e).lower()
+                if "404" in err_msg or "not_found" in err_msg or "not found" in err_msg or "no longer available" in err_msg:
+                    break
                 backoff = (2 ** attempt) + random.uniform(0.5, 1.0)
                 time.sleep(backoff)
                 continue

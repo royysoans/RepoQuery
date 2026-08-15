@@ -5,3 +5,4 @@ python-dotenv
 google-genai
 rank-bm25
 pathspec
+streamlit
