@@ -1,6 +1,6 @@
 # RepoQuery
 
-RepoQuery is a high-performance, local-first Retrieval-Augmented Generation (RAG) system and codebase search engine. It transforms source code repositories into searchable vector and keyword indices, enabling precise natural language code exploration, real-time streaming Q&A powered by Google Gemini, and interactive web visualization.
+RepoQuery is a high-performance Retrieval-Augmented Generation (RAG) system and codebase search engine. It transforms source code repositories into searchable vector and keyword indices, enabling  natural language code exploration and real-time streaming Q&A powered by Google Gemini
 
 ---
 
