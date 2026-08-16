@@ -16,14 +16,11 @@ except ImportError:
 
 def tokenize_code(text: str) -> List[str]:
     """Tokenize code text, splitting on camelCase, snake_case, paths, and punctuation."""
-    # Split camelCase: loadQuestions -> load Questions
     s1 = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
-    # Split non-alphanumeric
     raw_tokens = re.findall(r"[a-zA-Z0-9_]+", s1.lower())
     tokens = []
     for t in raw_tokens:
         tokens.append(t)
-        # Also split snake_case tokens
         sub_tokens = t.split("_")
         if len(sub_tokens) > 1:
             tokens.extend([st for st in sub_tokens if st])
@@ -59,7 +56,6 @@ class Retriever:
         self.index.add(embeddings)
         self.model = SentenceTransformer(self.manifest["model_name"])
 
-        # Initialize BM25 Sparse Index
         self._init_bm25(data_dir)
 
     def _init_bm25(self, data_dir: str):
@@ -84,7 +80,6 @@ class Retriever:
 
         self.bm25 = BM25Okapi(corpus_tokens)
 
-        # Save to cache
         try:
             import pickle
             with open(bm25_cache_path, "wb") as f:
@@ -147,12 +142,10 @@ class Retriever:
         bm25_results = self.search_bm25(query, top_k=candidate_k)
 
         if not bm25_results:
-            # Fallback to pure dense if BM25 is unavailable or returned no hits
             for r in dense_results:
                 r["score"] = r.get("dense_score", 0.0)
             return dense_results[:top_k]
 
-        # Reciprocal Rank Fusion (RRF) with constant k=60
         RRF_K = 60.0
         scores_by_idx: Dict[int, float] = {}
         chunks_by_idx: Dict[int, dict] = {}
@@ -200,7 +193,5 @@ def build_index_cli():
         preview = r["snippet"].strip().splitlines()[0][:80]
         print(f"    {preview}")
 
-
 if __name__ == "__main__":
     build_index_cli()
-

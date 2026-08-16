@@ -2,17 +2,6 @@
 
 RepoQuery is a high-performance Retrieval-Augmented Generation (RAG) system and codebase search engine. It transforms source code repositories into searchable vector and keyword indices, enabling  natural language code exploration and real-time streaming Q&A powered by Google Gemini
 
-
-## Core Concepts
-
-- **BM25 (Sparse Keyword Search)**: Ranks code snippets by matching exact token frequencies like variable names, function identifiers, or API endpoints.
-- **FAISS & Dense Embeddings**: Maps code semantics into 384-dimensional vector space (`all-MiniLM-L6-v2`).
-- **Reciprocal Rank Fusion (RRF)**: A rank-blending algorithm that mathematically combines dense semantic search and sparse keyword search into a precision score.
-- **AST & Structural Chunking**: Parses code structures like functions, classes, and methods rather than splitting arbitrarily, preserving logic boundaries.
-- **Sliding Window Safeguard**: Automatically splits oversized files into overlapping 120-line windows to prevent context window overflow during LLM inference.
-- **BM25 Persistence Cache**: Serializes tokenized BM25 indices to disk (`bm25.pkl`) for sub-millisecond startup times on subsequent runs.
-- **Real-Time Token Streaming**: Streams Gemini answer responses chunk-by-chunk for zero-perceived-latency user feedback.
-
 ---
 
 ## Architecture & Step-by-Step Flow
@@ -88,7 +77,7 @@ GEMINI_API_KEY=your_gemini_api_key_here
 #### Option A: Web Dashboard UI (Streamlit)
 Launch the visual web interface in your browser:
 ```bash
-streamlit run app.py
+streamlit run app.py (this step might take some time)
 ```
 - Open `http://localhost:8501`
 - Enter your repository directory path in the sidebar
