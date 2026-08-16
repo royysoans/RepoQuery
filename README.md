@@ -4,6 +4,8 @@ RepoQuery is a high-performance Retrieval-Augmented Generation (RAG) system and 
 
 ---
 
+![RepoQuery Demo](1.png)
+
 ## Architecture & Step-by-Step Flow
 
 ### Step 1: Repository Ingestion & Scanning
